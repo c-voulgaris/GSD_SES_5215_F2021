@@ -1,0 +1,42 @@
+---
+title: "Assignment 1 Example"
+author: "Carole Voulgaris"
+date: "10/16/2021"
+output: 
+  html_document:
+    theme: readable
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Research question
+
+How does travel time to work vary by occupation, income, commute mode, and housing costs?
+
+# Prior research
+
+
+
+# Data
+
+
+
+## Load data
+
+I'll be using the following libraries for this exercise:
+
+```{r, message=FALSE}
+library(tidyverse)
+library(tidycensus)
+library(readxl)
+library(knitr)
+```
+
+# References
+
+
