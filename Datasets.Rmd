@@ -1,0 +1,34 @@
+---
+title: "Datasets"
+author: "Carole Voulgaris"
+date: "10/20/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Here are some datasets that may be of interest to planning students. Let me know if you find other interesting datasets I should add to this list.
+
+* [Police Data Initiative](https://www.policedatainitiative.org/datasets/){target="_blank"}: Includes data from participating agencies on topics including community engagement, arrests, complaints, use of force, and officer demographics.
+
+* [IPUMS USA](https://usa.ipums.org/usa/){target="_blank"}: Person-level and household-level data from the U.S. Census and the American Community Survey from 1850 to the present. You need to create a free account to access the data.
+
+* [IPUMS International](https://international.ipums.org/international/){target="_blank"}: Contemporary and historical census microdata from over 100 different countries.
+
+* [National Longitudinal Study of Adolescent to Adult Health (Add Health), 1994-2018](https://www.icpsr.umich.edu/web/DSDR/studies/21600){target="_blank"}:  Data from a longitudinal survey focusing on a very wide range of health outcomes among adolescents in the United States. You do need to create a free account to access this data.
+
+* [National Household Travel Survey](https://nhts.ornl.gov/){target="_blank"}: Travel diary data from a large sample of households in the United States with household-level, person-level, trip-level data.
+
+* [2020 Precinct-level election results](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/K7760H){target="_blank"}: Shapefiles with precinct-level election results.
+
+* [Current Population Survey Civic Engagement Supplement](https://www.census.gov/data/datasets/time-series/demo/cps/cps-supp_cps-repwgt/cps-civic.2017.html){target="_blank"}: Survey results from 2010, 2011, 2013, and 2017 on civic engagement in the United States.
+
+* [Datasets from the Pew Research Center](https://www.pewresearch.org/download-datasets/){target="_blank"}: The Pew Research Center conducts a lot of surveys both in the United States and internationally, and they make their data publicly available.
+
+* [AirBnB data](http://insideairbnb.com/get-the-data.html){target="_blank"}: Data on AirBnB listings for various cities, compiled from (but not endorsed by) AirBnB.
+
+* [Yelp Open Dataset](https://www.yelp.com/dataset){target="_blank"}: A selection of business reviews and listings provided by Yelp for educational/academic purposes. Includes data for eight metro areas in North America (Montreal, Calgary, Toronto, Pittsburgh, Charlotte, Urbana-Champaign, Phoenix, Madison, and Cleveland). You need to create an account and agree to the data license agreement.
+
+In addition to the above, many cities have very useful open-data portals.
