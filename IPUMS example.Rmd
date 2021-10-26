@@ -1,0 +1,20 @@
+---
+title: "IPUMS example"
+author: "Carole Voulgaris"
+date: "10/21/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ipumsr)
+```
+
+```{r}
+ddi <- read_ipums_ddi("data/usa_00001.xml")
+data <- read_ipums_micro(ddi)
+```
+

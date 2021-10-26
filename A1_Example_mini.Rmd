@@ -32,9 +32,14 @@ I'll be using the following libraries for this exercise:
 
 ```{r, message=FALSE}
 library(tidyverse)
-library(tidycensus)
-library(readxl)
 library(knitr)
+```
+
+I'll read data in from the CPS Civic Engagement Supplement
+
+```{r}
+data <- read_delim("data/usa_00001.dat", delim = " ")
+
 ```
 
 # References
