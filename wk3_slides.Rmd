@@ -318,12 +318,6 @@ An **Analysis of Variance (ANOVA) test** will give you the significance of the r
 
 That's not a super interesting thing to know, because even if the ANOVA tells you that there's a relationship between a categorical variable and a continuous variable, you still won't know which category (or categories) make a difference, or how much of a difference it makes, or even if it's a positive or negative difference. That's probably why I don't think I've ever seen some use ANOVA outside of a statistics class.
 
-## The relationship between two categorical variables
-
-A **Chi-square test** can tell you if two categorical variables are related to each other. The way it works is, you generate a table showing how many observations are in each possible combination of the two categories. Then you generate another table showing what that table would have looked like if the two categories had nothing to do with each other. Then, you can calculate a p-value to tell you whether the tables are different enough from each other that the difference can't just be a coincidence.
-
-And when I say "you", I mean R. Don't do those calculations by hand. That's why there are computers.
-
 ## One last thing: Words matter
 
 You'll notice that the word **significant** has a specific meaning when we're talking about quantitative analysis. In everyday speech, we often say there's a 'significant difference' or a 'significant increase' when we're just talking about a big difference, but we aren't really intending to say anything about statistical significance.
