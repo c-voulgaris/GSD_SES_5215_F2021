@@ -1,0 +1,335 @@
+---
+title: "Bivariate Relationships"
+author: "Carole Voulgaris"
+date: "11/1/2021"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(MASS)
+library(ggthemes)
+```
+
+```{r}
+samples = 200
+r = 1
+
+data_mat_1.0 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_1.0 <- tibble(X = data_mat_1.0[, 1],
+                   Y  = (data_mat_1.0[, 2] +3)*5)
+
+samples = 200
+r = 0.75
+
+
+data_mat_0.75 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_0.75 <- tibble(X = data_mat_0.75[, 1],
+                   Y  = (data_mat_0.75[, 2] + 3)*5)
+
+samples = 200
+r = 0.5
+
+
+data_mat_0.5 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_0.5 <- tibble(X = data_mat_0.5[, 1],
+                   Y  = (data_mat_0.5[, 2] + 3)*5)
+
+samples = 200
+r = 0.25
+
+
+data_mat_0.25 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_0.25 <- tibble(X = data_mat_0.25[, 1],
+                   Y  = (data_mat_0.25[, 2] + 3)*5)
+
+samples = 200
+r = 0
+
+
+data_mat_0 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_0 <- tibble(X = data_mat_0[, 1],
+                   Y  = (data_mat_0[, 2] + 3)*5)
+
+samples = 200
+r = -0.25
+
+
+data_mat_n0.25 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_n0.25 <- tibble(X = data_mat_n0.25[, 1],
+                   Y  = (data_mat_n0.25[, 2] + 3)*5)
+
+samples = 200
+r = -0.5
+
+
+data_mat_n0.5 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_n0.5 <- tibble(X = data_mat_n0.5[, 1],
+                   Y  = (data_mat_n0.5[, 2] + 3)*5)
+
+samples = 200
+r = -0.75
+
+
+data_mat_n0.75 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_n0.75 <- tibble(X = data_mat_n0.75[, 1],
+                   Y  = (data_mat_n0.75[, 2] + 3)*5)
+
+samples = 200
+r = -1
+
+
+data_mat_n1 <- mvrnorm(n=samples, mu=c(0, 0), 
+               Sigma=matrix(c(1, r, r, 1), nrow=2), 
+               empirical=TRUE)
+
+data_n1 <- tibble(X = data_mat_n1[, 1],
+                   Y  = (data_mat_n1[, 2] + 3)*5)
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+
+ggplot(data_1.0, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, 
+           label = "Correlation = 1.0") +
+  scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+ggplot(data_0.75, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, label = "Correlation = 0.75") +
+  scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+ggplot(data_0.5, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, label = "Correlation = 0.5") +
+  scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+ggplot(data_0.25, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, label = "Correlation = 0.25") +
+    scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+ggplot(data_0, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, label = "Correlation = 0") +
+    scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+ggplot(data_n0.25, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, label = "Correlation = -0.25") +
+    scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+ggplot(data_n0.5, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, label = "Correlation = -0.5") +
+    scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+ggplot(data_n0.75, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, label = "Correlation = -0.75") +
+    scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## The (linear) relationship between two continuous variables
+
+Pearson's **correlation** describes the relationship between two continuous variables. It can range from -1 to 1. A value of zero means there's no relationship between the two variables. Values closer to 1 indicate a stronger positive relationship, and values closer to -1 indicate a stronger negative relationship.
+
+```{r}
+ggplot(data_n1, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 35, label = "Correlation = -1") +
+    scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 40)) +
+  theme_few()
+```
+
+## We're testing for a linear relationship
+
+Just because the correlation is zero, that doesn't mean there's no relationship. It just means there isn't a linear relationship. In the example below, the two variables have a pretty clear relationship, based on the scatter plot, but since it isn't a linear relationship, the correlation is zero.
+
+```{r, echo=FALSE}
+data_trick <- tibble(X = seq(-3.5, 3.5, by = 0.1),
+                     Y = X^2)
+
+ggplot(data_trick, aes(X, Y)) +
+  geom_point() +
+  annotate("text", x = -3, y = 20, label = "Correlation = 0") +
+    scale_x_continuous(name = "Some variable", 
+                     limits = c(-4, 4)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(-10, 25)) +
+  theme_few()
+```
+
+## Transformations
+
+If there's a non-linear relationship between two variables, you can often transform the data to come up with a linear relationship. The graph below is the same data as in the graph above, but the x-values have been squared.
+
+```{r, echo=FALSE}
+data_trick <- tibble(X = seq(-3.5, 3.5, by = 0.1),
+                     Y = X^2)
+
+ggplot(data_trick, aes(X^2, Y)) +
+  geom_point() +
+  annotate("text", x = 3, y = 16, label = "Correlation = 1") +
+    scale_x_continuous(name = "Some variable, squared", 
+                     limits = c(0, 20)) +
+  scale_y_continuous(name = "Some other variable", 
+                     limits = c(0, 20)) +
+  theme_few()
+```
+
+## Confidence intervals and p-values
+
+Remember how, for a sample of a population, the 95-percent confidence interval of the mean is the range of values where you can be 95-percent sure that the real mean of the full population is somewhere in that range?
+
+You can also calculate a 95-percent confidence interval for a correlation. 
+If the 95-percent confidence interval is all positive numbers, you can be 95-percent confident that there is a positive relationship between the two variables.
+
+If the 95-percent confidence interval is all negative numbers, you can be 95-percent condifent that there is a negative relationship between the two numbers.
+
+If the 95-percent confidence interval includes zero (meaning it includes both positive and negative numbers), then you can't by 95-percent confident that there is any relationship at all between the two numbers (because the real correlation might be zero).
+
+A correlation will also have a **p-value** associated with it. The p-value is the likelihood that you would have calculated that correlation for your sample if the correlation for the full population was actually zero. When the p-value is less than 0.05, the 95-percent confidence interval will not include zero, and the correlation is **significant**.
+
+## The relationship between a continuous variable and a (two-level) categorical variable
+
+Let's say you have a sample that's divided into two categories, and you want to know if there's a relationship between that categorical variable and some continuous variable. Another way to say that is that you want to know whether the continuous variable has values that are significantly different for observations in one category than for observations in the other category.
+
+You could take the average within each category, but even if the categories aren't really that different, it would be an amazing coincidence if the two averages were *exactly* the same. How close is close enough to say there isn't really a difference between the two categories? Or in other words, how do you know if the difference between the two categories is significant?
+
+The answer is: You can do a **two-sample t-test**! This will give you the 95-percent confidence interval for the difference between the two averages, as well as the p-value (significance) of that difference.
+
+You can think of the result of a two-sample t-test as the average difference between points in the categories. Just like with any average, you can calculate a 95-percentile for the population mean, which in this case is the average difference. If the 95-percent confidence interval includes zero, then you can't say for sure (or at least, with 95-percent confidence) that there's any difference between the two groups. If the 95-percent confidence interval does not include zero (either all positive or all negative numbers), then there is a significant difference.  
+
+## The relationship between a continuous variable and a categorical variable with three or more levels.
+
+An **Analysis of Variance (ANOVA) test** will give you the significance of the relationship between a categorical variable and a continuous variables. In other words, it will give you a p-value representing the likelihood that there is being in any particular category has relationship with what the value of the continuous variable will be.
+
+That's not a super interesting thing to know, because even if the ANOVA tells you that there's a relationship between a categorical variable and a continuous variable, you still won't know which category (or categories) make a difference, or how much of a difference it makes, or even if it's a positive or negative difference. That's probably why I don't think I've ever seen some use ANOVA outside of a statistics class.
+
+## The relationship between two categorical variables
+
+A **Chi-square test** can tell you if two categorical variables are related to each other. The way it works is, you generate a table showing how many observations are in each possible combination of the two categories. Then you generate another table showing what that table would have looked like if the two categories had nothing to do with each other. Then, you can calculate a p-value to tell you whether the tables are different enough from each other that the difference can't just be a coincidence.
+
+And when I say "you", I mean R. Don't do those calculations by hand. That's why there are computers.
+
+## One last thing: Words matter
+
+You'll notice that the word **significant** has a specific meaning when we're talking about quantitative analysis. In everyday speech, we often say there's a 'significant difference' or a 'significant increase' when we're just talking about a big difference, but we aren't really intending to say anything about statistical significance.
+
+When you're writing or talking about data, you should avoid using the word significant if you aren't talking about statistical significance. Some good alternatives are "substantial" or "noteworthy" or even just "big" (better to use a small word that says what you mean than to misuse a big word).
+
+One other place where the word "significant" can get you into trouble, specific to planning: 
+
+In environmental impact studies in the United States, if you find that a project will have a "significant impact," it will be subject to more intense review. In this case, you're not talking about statistical significance, but the word significant still has a precise, legal meaning. Anytime you write anything that might be the the subject of review under the National Environmental Protection Act (NEPA) or any of its state-level equivalents (e.g. SEPA in Washington or CEQA in California), you want to be careful that you're not throwing the word "significant" around casually.

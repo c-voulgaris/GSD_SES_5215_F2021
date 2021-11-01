@@ -1,0 +1,49 @@
+---
+title: "Filtering by date"
+author: "Carole Voulgaris"
+date: "11/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+Read file
+
+```{r}
+library(tidyverse)
+library(sf)
+library(lubridate)
+```
+Read the file
+
+```{r}
+arrests <- st_read("data/NYPD Arrests Data (Historic).geojson") 
+```
+
+Filter for just resisting arrest
+
+```{r}
+arrests_resist <- arrests %>%
+  filter(pd_desc == "RESISTING ARREST")
+```
+
+Filter for just summer 2020
+
+```{r}
+arrests_resist_summer2020 <- arrests_resist %>%
+  mutate(year = year(arrest_date)) %>%
+  mutate(month = month(arrest_date)) %>%
+  filter(year == 2020 &
+           month > 4 &
+           month < 9)
+```
+
+save as a much smaller geojson
+
+```{r}
+st_write(arrests_resist_summer2020, dsn="summer_NYC_resisting_arrest.geojson")
+```

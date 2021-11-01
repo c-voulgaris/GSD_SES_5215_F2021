@@ -1,0 +1,325 @@
+---
+title: "Assignment 1 Example: Survey Data"
+author: "Carole Voulgaris"
+date: "10/16/2021"
+output: 
+  html_document:
+    theme: readable
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction and setup
+
+The purpose of this example is to demonstrate some of the methods that will be helpful to you in loading survey data (especially data from IPUMS), calculating descriptive statistics, and estimating bivariate relationships.
+
+I'll be using the following packages. These are the same ones from Assignment 2, with one addition (`jtools`).
+
+```{r, message=FALSE}
+library(tidyverse)
+library(knitr)
+library(ipumsr)
+library(survey)
+library(srvyr)
+library(jtools)
+library(weights)
+```
+
+# Research question
+
+How does the amount of time a person spends traveling to work relate to their income, sex, mode of transportation, and hours worked per week?
+
+# Prior research
+
+Crane (2007) finds that there is a widening gap in commute times between men and women. Sandow and Westin (2010) find that men experience a higher income premium for long-distance commuting than women do.
+
+# Data 
+
+For this analysis, I'm using microdata from the 2019 5-year sample of the American Community Survey for the Los Angeles Metropolitan Area, as downloaded from IPUMS USA (Ruggles et al. 2021). I'm going to analyze the following five variables:
+
+1. INCTOT: Annual personal income.
+2. TRANTIME: Typical commute time to work
+3. UHRSWORK: Typical hours worked per week
+4. TRANWORK: Mode of transportation to work
+5. SEX: Sex
+
+```{r, message=FALSE, results='hide'}
+ddi <- read_ipums_ddi("data/usa_00005.xml")
+data <- read_ipums_micro(ddi) %>%
+  na_if(9999999) %>%
+  filter(UHRSWORK > 0) %>%
+  mutate(SEX = as_factor(SEX)) %>%
+  mutate(TRANWORK = lbl_collapse(TRANWORK, ~.val %/% 10)) %>%
+  mutate(TRANWORK = as_factor(TRANWORK))
+```
+ 
+This dataset includes 348,564 individual survey respondents. 
+
+The dataset includes weights to adjust for the ways in which the sample is not representative of the overall population, so I'll use the survey (Lumley, 2004) and srvyr (Freedman Ellis and Schneider 2021) packages to incorporate those weights into my analysis. First, I need to create a survey design object.
+
+```{r}
+svy_data <- data %>%
+  as_survey_design(ids = CLUSTER,
+                   strata = STRATA,
+                   weights = PERWT)
+```
+
+# Descriptive statistics
+
+## Continuous variables
+
+Here's how I can create a table with the estimated mean and 95-percent confidence interval and variance (the square of the standard deviation) for each of my three continuous variables.
+
+```{r}
+travel_time_mean <- svy_data %>%
+  srvyr::summarize(mean = survey_mean(TRANTIME, vartype = c("ci", "var"), na.rm = TRUE))
+
+income_mean <- svy_data %>%
+  srvyr::summarize(mean = survey_mean(INCTOT, vartype = c("ci", "var"), na.rm = TRUE))
+
+hours_mean <- svy_data %>%
+  srvyr::summarize(mean = survey_mean(UHRSWORK, vartype = c("ci", "var"), na.rm = TRUE))
+```
+
+I can do something similar to create a table with the 25th, 50th, and 75th percentile values.
+
+```{r}
+travel_time_quants <- svy_data %>%
+  srvyr::summarize(quants = survey_quantile(TRANTIME, 
+                                     quantiles =  c(0.25, 0.5, 0.75),
+                                     vartype = NULL)) 
+
+income_quants <- svy_data %>%
+  srvyr::summarize(quants = survey_quantile(INCTOT, 
+                                     quantiles =  c(0.25, 0.5, 0.75),
+                                     vartype = NULL)) 
+
+hours_quants <- svy_data %>%
+  srvyr::summarize(quants = survey_quantile(UHRSWORK, 
+                                     quantiles =  c(0.25, 0.5, 0.75),
+                                     vartype = NULL)) 
+```
+
+I can combine those six tables into a single table using `rbind()` and `left_join()`, and I add the standard deviations and the interquartile ranges to that combined table.
+
+```{r, message=FALSE}
+mean_summary <- rbind(travel_time_mean, income_mean, hours_mean) %>%
+    mutate(variable = c("Travel time to work",
+                      "Personal income",
+                      "Usual hours worked per week"))
+
+quant_summary <- rbind(travel_time_quants, income_quants, hours_quants) %>%
+    mutate(variable = c("Travel time to work",
+                      "Personal income",
+                      "Usual hours worked per week"))
+
+summary <- left_join(mean_summary, quant_summary) %>%
+  mutate(sd = mean_var^0.5) %>%
+  mutate(IQR = quants_q75 - quants_q25) %>%
+  rename(median = quants_q50) %>%
+  select(variable, mean, mean_low, mean_upp, median, sd, IQR)
+
+kable(summary, digits=2)
+```
+
+I can also create a histogram using `svyhist()`.
+
+```{r}
+travel_time_hist <- svyhist(~TRANTIME, design = svy_data,
+                            freq = TRUE)
+```
+
+The above plot is pretty basic. I can also bring it into ggplot.
+
+```{r}
+travel_time_hist_df <- tibble(mids = travel_time_hist$mids,
+                              counts = travel_time_hist$counts)
+
+ggplot(travel_time_hist_df) +
+  geom_bar(aes(x = mids, y = counts),
+           stat = "identity") +
+  theme_bw() +
+  scale_x_continuous(name = "Travel time to work (minutes)") +
+  scale_y_continuous(name = "Estimated number of workers (weighted)")
+```
+
+## Categorical variables
+
+I can use `group_by()` and `survey_prop()` to calculate shares of my categorical variables, along with confidence intervals.
+
+```{r}
+ed_shares <- svy_data %>%
+  group_by(SEX) %>%
+  srvyr::summarize(share = survey_prop(vartype = "ci"))
+
+kable(ed_shares, digits = 3)
+```
+
+```{r}
+mode_shares <- svy_data %>%
+  group_by(TRANWORK) %>%
+  srvyr::summarize(share = survey_prop(vartype = "ci"))
+
+kable(mode_shares, digits = 3)
+```
+
+# Bivariate analysis
+
+My dependent variable is travel time to work. My independent variables are sex, mode of transportation, hours worked per week, and income.
+
+## Correlations / regression on continuous variables
+
+### Correlations
+
+You can use `svycor()` to calculate the correlations between all pairs of continuous variables. The first argument of the function is a list of continuous variables, in the format `~variable1 + variable2 + ... + variableN`. You can include as many variables as you want. Then you need to indicate the survey design object you created that speficies all the weights and everything. `sig.stats = TRUE` means you want p-values and standard errors for each of the correlation values as well.
+
+`svycor()` may take a few minutes to run.
+
+```{r}
+corrs <- svycor(~TRANTIME + UHRSWORK + INCTOT, design = svy_data, sig.stats = TRUE)
+```
+
+This creates a matrix of values with the correlations between all possible pairs of variables in your list.
+
+```{r}
+corrs$cors
+```
+
+You can also get a matrix of p-values,
+
+```{r}
+corrs$p.values
+```
+
+and a matrix of standard errors,
+
+```{r}
+corrs$std.err
+```
+
+which you can use to calculate a 95-percent confidence interval.
+
+```{r}
+corrs_ci_low <- corrs$cors - 1.96*corrs$std.err
+
+corrs_ci_upp <- corrs$cors + 1.96*corrs$std.err
+```
+
+You can view those upper and lower limits in separate little matrices:
+
+```{r}
+corrs_ci_low
+
+corrs_ci_upp
+```
+
+Or you can do a little finangling to create a table that shows them as intervals
+
+```{r, message=FALSE}
+corrs_low_df <- as_tibble(corrs_ci_low) %>%
+  mutate(variable = c("Travel time to work", "Usual hours worked", "Income")) %>%
+  rename(TRANTIME_low = TRANTIME,
+         UHRSWORK_low = UHRSWORK,
+         INCTOT_low = INCTOT)
+
+corrs_upp_df <- as_tibble(corrs_ci_upp) %>%
+  mutate(variable = c("Travel time to work", "Usual hours worked", "Income")) %>%
+  rename(TRANTIME_upp = TRANTIME,
+         UHRSWORK_upp = UHRSWORK,
+         INCTOT_upp = INCTOT)
+
+corrs_pretty_int <- left_join(corrs_low_df, corrs_upp_df) %>%
+  mutate(`Travel time to work` = paste(prettyNum(TRANTIME_low, digits = 3), 
+                                 " to ", 
+                                 prettyNum(TRANTIME_upp, digits = 3))) %>%
+  mutate(`Usual hours worked` = paste(prettyNum(UHRSWORK_low, digits = 3), 
+                                 " to ", 
+                                 prettyNum(UHRSWORK_upp, digits = 3))) %>%
+  mutate(Income = paste(prettyNum(INCTOT_low, digits = 3), 
+                                 " to ", 
+                                 prettyNum(INCTOT_upp, digits = 3))) %>%
+  select(variable, `Travel time to work`, `Usual hours worked`, Income)
+  
+kable(corrs_pretty_int)
+```
+
+### Regression
+
+We can also test each of these relationships using regression. Let's start with the relationship between travel time to work and income.
+
+The p-value for the INCTOT variable will be the same as the p-value for the correlation between income and travel time. The correlation would be the same as the square root of the R-square value, but `svyglm()` doesn't return an R-square value - with the weights.
+
+```{r}
+income_model <- svyglm(TRANTIME ~ INCTOT, design = svy_data)
+
+summary(income_model)
+```
+
+This result indicates that, on average, each dollar of additional income is associated with an increase in commute time of $\ 1.606 \times 10^{-5}$ minutes. That's a very small amount, but since this is a linear relationship we're talking about, it means each $10,000 of additional income is associated with an increase in commute time of 0.1606 minutes (about 10 seconds). Which is a little more interesting, I guess.
+
+We can do the same for hours worked.
+
+```{r}
+hours_model <- svyglm(TRANTIME ~ UHRSWORK, design = svy_data)
+
+summary(hours_model)
+```
+
+This means that each additional hour in a typical work week is associated with 0.23 minutes of additional commute time. So you'd expect someone who works 44 hours per week to be commuting for about a minute longer than someone who works 40 hours per week.
+
+## Difference in means / regression on categorical variables
+
+### Sex
+
+I want to know if women have longer commutes than men, on average. I can answer this question with a two-sample t-test.
+
+```{r}
+svyttest(TRANTIME ~ SEX, svy_data)
+```
+
+And I can get the same result using a regression.
+
+```{r}
+sex_model <- svyglm(TRANTIME ~ SEX, svy_data)
+
+summary(sex_model)
+```
+
+Both results indicate that women have commutes that are, on average, 2.7 minutes shorter than men's commutes.
+
+### Commute mode
+
+I also want to know about the relationship between commute mode and commute time. Since cars are the most common commute mode, I'm probably most interested in how the commute time by every other commute mode differs from that of driving. To make driving the base case (the default condition that we compare everything else to), I need to relevel my factors and recreate the survey object.
+
+```{r}
+data <- data %>%
+  mutate(TRANWORK = relevel(TRANWORK, "Auto, truck, or van"))
+
+svy_data <- data %>%
+  as_survey_design(ids = CLUSTER,
+                   strata = STRATA,
+                   weights = PERWT)
+
+mode_model <- svyglm(TRANTIME ~ TRANWORK, svy_data)
+
+summary(mode_model)
+```
+
+This suggests that commutes by motorcycle are, on average, about 5 minutes shorter than commutes by car, transit commutes are 21 minutes longer, and bike commutes are about 17 minutes shorter.
+
+# References
+
+Crane, Randall. "Is there a quiet revolution in women's travel? Revisiting the gender gap in commuting." Journal of the American planning association 73, no. 3 (2007): 298-316.
+
+Freedman Ellis, Greg, and Ben Schneider (2021). srvyr: 'dplyr'-Like Syntax for Summary Statistics of Survey Data. R package version 1.0.1. https://CRAN.R-project.org/package=srvyr
+
+Lumley, T. (2004) Analysis of complex survey samples. Journal of Statistical Software 9(1): 1-19
+
+Ruggles, Steven, Sarah Flood, Sophia Foster, Ronald Goeken, Jose Pacas, Megan Schouweiler and Matthew Sobek. IPUMS USA: Version 11.0 [dataset]. Minneapolis, MN: IPUMS (2021) https://doi.org/10.18128/D010.V11.0
+
+Sandow, Erika, and Kerstin Westin. "The persevering commuter–Duration of long-distance commuting." Transportation Research Part A: Policy and Practice 44, no. 6 (2010): 433-445.

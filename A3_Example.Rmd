@@ -1,0 +1,496 @@
+---
+title: "Assignment 1 Example"
+author: "Carole Voulgaris"
+date: "10/16/2021"
+output: 
+  html_document:
+    theme: readable
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Research question
+
+How well do density and location relative to a metropolitan center predict county-level case-rates and death-rates from COVID-19 in the United States?
+
+# Prior research
+
+Wong and Li (2020) find that population density is an effective predictor of county-level cumulative COVID-19 case rates, particularly after the earliest stages of the pandemic. In contrast, Hamidi, Sabouri, and Ewing (2020) find that, while total metropolitan population is a significant predictor of county-level COVID case rates, county population density is not.
+
+# Data
+
+The sample population for this study is the full set of all counties in the United States. The analysis will include the following variables:
+
+* Cumulative number of COVID-19 cases to date, as of October 15, 2021 (Dong et al. 2020)
+* Majority vote in last presidential election  (MIT Election Data and Science Lab, 2018)
+* People per square mile (United States Census Bureau 2020)
+* Median age (United States Census Bureau 2019)
+* Urban-Rural County classification (National Center for Health Statistics 2013)
+
+## Load data
+
+I'll be using the following libraries for this exercise:
+
+```{r, message=FALSE}
+library(tidyverse)
+library(tidycensus)
+library(readxl)
+library(knitr)
+library(tigris)
+library(sf)
+library(gridExtra)
+```
+
+First, I'll load the total population and total number of housing units from the decennial census, using the `tidycensus` package (Walker 2021).
+
+```{r, message=FALSE, results='hide'}
+census <- get_decennial(geography = "county", 
+                        year = 2020,
+                        variables = c(pop = "P1_001N"),
+                        output = "wide",
+                        geometry = FALSE)
+```
+
+I'll also use the same package to get the median age for each county from the 2019 American Community Survey.
+
+```{r, message=FALSE, results='hide'}
+acs_age <- get_acs(geography = "county", 
+                   variables = c(med_age_ = "B01002_001"), 
+                   output = "wide")
+```
+
+Since I'm interested in the population density, I'll also get the county boundaries from the tigris package, since that dataset includes a variable indicating the area of land within the county. Values are in square meters, which I'll convert to square miles.
+
+```{r, message=FALSE, results='hide'}
+areas <- counties() %>%
+  st_set_geometry(NULL) %>%
+  mutate(sq_miles = ALAND / 2589988.11) %>%
+  select(GEOID, sq_miles)
+```
+
+I'm loading COVID data directly from the COVID-19 Data Repository by the Center for Systems Science and Engineering (CSSE) at Johns Hopkins University (Dong et al. 2020).
+
+``````{r, message=FALSE, results='hide'}
+covid <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/01-02-2021.csv") %>%
+  filter(Country_Region == "US" &
+           !is.na(Admin2)) %>%
+  mutate(GEOID = case_when(str_length(as.character(FIPS)) == 5 ~ 
+                            as.character(FIPS),
+                          str_length(as.character(FIPS)) == 4 ~
+                            paste("0", FIPS, sep=""),
+                          TRUE ~ "not a county")) %>%
+  filter(GEOID != "not a county") %>%
+  select(Confirmed, GEOID)
+```
+
+I've downloaded a spreadsheet with the urban-rural classifications from https://www.cdc.gov/nchs/data_access/urban_rural.htm and saved it to the `data` file in my project folder. I'll load it here.
+
+``````{r, message=FALSE, results='hide'}
+CO_type <- read_xlsx(path = "data/NCHSURCodes2013.xlsx", 
+                      sheet = "NCHSURCodes2013") %>%
+  mutate(GEOID = case_when(str_length(as.character(`FIPS code`)) == 5 ~ 
+                            as.character(`FIPS code`),
+                          str_length(as.character(`FIPS code`)) == 4 ~
+                            paste("0", `FIPS code`, sep=""),
+                          TRUE ~ "unknown")) %>%
+  mutate(type = case_when(`2013 code` == 1 ~ "Large central metro",
+                          `2013 code` == 2 ~ "Large fringe metro",
+                          `2013 code` == 3 ~ "Medium metro",
+                          `2013 code` == 4 ~ "Small metro",
+                          `2013 code` == 5 ~ "Micropolitan",
+                          `2013 code` == 6 ~ "Non-core",
+                          TRUE ~ "unknown")) %>%
+  select(GEOID, type)
+```
+
+I've downloaded a csv file with election results from the Harvard Dataverse (https://doi.org/10.7910/DVN/VOQCHQ) and saved it to the data file in my project folder. I'll load it here.
+
+``````{r, message=FALSE, results='hide'}
+election <- read_csv('data/countypres_2000-2020.csv') %>%
+  filter(year == 2020) %>%
+  filter(party == "REPUBLICAN") %>%
+  rename(GEOID = county_fips) %>%
+  group_by(GEOID) %>%
+  dplyr::summarize(candidatevotes = sum(candidatevotes),
+            totalvotes = first(totalvotes)) %>%
+  mutate(pct_GOP = candidatevotes / totalvotes) %>%
+  mutate(majority_vote = ifelse(pct_GOP > 0.5, "Republican", "Democrat")) %>%
+  select(GEOID, pct_GOP, majority_vote)
+```
+
+Now that I have all my datasets loaded, I can join them all together, calculate the population density and the case rate, select the variables I want to keep, then display the first few rows
+
+``````{r, message=FALSE}
+data <- left_join(census, areas) %>%
+  left_join(acs_age) %>% 
+  left_join(election) %>%
+  left_join(CO_type) %>%
+  left_join(covid) %>%
+  mutate(pop_dens = pop / sq_miles) %>%
+  mutate(covid_rate = Confirmed / pop) %>%
+  select(GEOID, med_age_E, pop_dens, covid_rate, type, majority_vote, pop)
+
+kable(head(data))
+```
+
+The dataset includes 3221 counties.
+
+# Descriptive statistics
+
+## Continuous variables
+
+The continuous variables I want to use are median age, population density, and COVID cases per capita.
+
+### Calculations
+
+I can get the sample mean and the 95-percent confidence interval from the population mean with the `t.test()` function (this is a one-sample t-test). 
+
+```{r}
+age_t_test <- t.test(data$med_age_E)
+dens_t_test <- t.test(data$pop_dens)
+covid_t_test <- t.test(data$covid_rate)
+```
+
+You might try typing `age_t_test` into your console to see what the output looks like, or you could expand that item in your environment tab to see what information it includes.
+
+I can get the median and the interquartile range using the `quantile()` function.
+
+```{r}
+age_quartiles <- quantile(data$med_age_E, na.rm = TRUE)
+dens_quartiles <- quantile(data$pop_dens, na.rm = TRUE)
+covid_quartiles <- quantile(data$covid_rate, na.rm = TRUE)
+```
+
+Again, you could try typing `dens_quartiles` into your console to see what the output looks like.
+
+And I can get the standard deviation from using the `sd()` function. 
+
+```{r}
+age_st_dev <- sd(data$med_age_E, na.rm = TRUE)
+dens_st_dev <- sd(data$pop_dens, na.rm = TRUE)
+covid_st_dev <- sd(data$covid_rate, na.rm = TRUE)
+
+```
+
+You might try typing covid_st_dev into your console to see the value.
+
+I can use the geom_histogram() function within a ggplot object to generate a histogram for each variable. I'm going to log-transform the x-axis for the population density so the variation is easier to see.
+
+```{r, message=FALSE, warning=FALSE}
+age_hist <- ggplot(data) +
+  geom_histogram(aes(x = med_age_E),
+                 bins = 30)
+
+dens_hist <- ggplot(data) +
+  geom_histogram(aes(x = pop_dens),
+                 bins = 30) +
+  scale_x_continuous(trans = "log")
+
+covid_hist <- ggplot(data) +
+  geom_histogram(aes(x = covid_rate),
+                 bins = 30)
+```
+
+If you type age_hist, dens_hist, or covid_hist into your console, the plots will display on your plot tab. Try recreating dens_hist without the log transformation to see why the log transformation was advisable.
+
+### Displaying your results
+
+#### Minimal formatting
+
+You have some options for how to display your results. You could type names of the summary variables you just created into a code chunk to print out the results. For example, here are all the summary statistics for COVID rates, followed by the histogram for that variable:
+
+```{r, warning = FALSE}
+covid_t_test
+covid_quartiles
+covid_st_dev
+covid_hist
+```
+
+#### Formatted table
+
+You could also create a nice table with all your results. Here is how you might do that.
+
+```{r}
+cont_summary <- tibble(
+  Variable = c("Median age", 
+               "Population density (people per square mile)", 
+               "COVID rate (Total confirmed cases per 1,000 residents)"),
+  `Sample mean` = c(age_t_test$estimate,
+                    dens_t_test$estimate,
+                    covid_t_test$estimate * 1000),
+  `Population mean (95% confidence) - low` = 
+    c(age_t_test$conf.int[1],
+      dens_t_test$conf.int[1],
+      covid_t_test$conf.int[1] * 1000),
+  `Population mean (95% confidence) - high` =
+    c(age_t_test$conf.int[2],
+      dens_t_test$conf.int[2],
+      covid_t_test$conf.int[2] * 1000),
+  Median = c(age_quartiles[3],
+             dens_quartiles[3],
+             covid_quartiles[3] * 1000),
+  `Interquartile range` = c(age_quartiles[4] - age_quartiles[2],
+                            dens_quartiles[4] - dens_quartiles[2],
+                            (covid_quartiles[4] - covid_quartiles[2]) * 1000),
+  `Standard deviation` = c(age_st_dev,
+                          dens_st_dev,
+                          covid_st_dev * 1000))
+
+kable(cont_summary, digits = 0)
+```
+
+#### Row of histograms
+
+And then you could display the three histograms in a neat little row (I'm setting `fig.height=3` and `fig.width=7` in the heading of the code chunk).
+
+```{r, warning=FALSE, message=FALSE, fig.height=4, fig.width=7}
+pretty_age_hist <- age_hist +
+  theme_bw() +
+  scale_x_continuous(name = "Median age") +
+  scale_y_continuous(name = "Number of counties") +
+  theme(axis.text.x = element_text(angle = 90))
+
+pretty_dens_hist <- dens_hist +
+  theme_bw() + 
+  scale_x_continuous(name = "Population density\n(residents per square mile)",
+                     trans = "log",
+                     breaks = c(0.1, 1, 10, 100, 1000, 10000),
+                     labels = c("0.1", "1", "10", "100", "1000", "10,000")) +
+  scale_y_continuous(name = "Number of counties") +
+  theme(axis.text.x = element_text(angle = 90))
+
+pretty_covid_hist = covid_hist +
+  theme_bw() +
+  scale_x_continuous(name = "Covid cases per\n1,000 residents",
+                     breaks = seq(0, 0.3, by=.05),
+                     labels = seq(0, 300, by = 50)) +
+  scale_y_continuous(name = "Number of counties") +
+  theme(axis.text.x = element_text(angle = 90)) 
+
+grid.arrange(pretty_age_hist, pretty_dens_hist, pretty_covid_hist,
+             ncol = 3)
+```
+
+## Categorical variables
+
+I have two categorical variables:
+
+1. The party of the candidate the won the most votes in the 2020 presidential election and
+2. The county type, based on the NCHS classification.
+
+### Calculations
+
+I can use a one sample t-test to get the 95-percent confidence interval for the proportion of the sample in each category
+
+```{r}
+pct_repub <- t.test(data$majority_vote == "Republican")
+pct_dem <-  t.test(data$majority_vote == "Democrat")
+
+pct_large_metro <- t.test(data$type == "Large central metro")
+pct_fringe_metro <- t.test(data$type == "Large fringe metro")
+pct_med_metro <- t.test(data$type == "Medium metro")
+pct_small_metro <- t.test(data$type == "Small metro")
+pct_micro <- t.test(data$type == "Micropolitan")
+pct_rural <- t.test(data$type == "Non-core")
+```
+
+### Displaying your results
+
+Now I can make some choices about how to display my results
+
+#### Formatted tables
+
+I could create a nice formatted table using the same approach I did for the categorical variables. Here's a table of the proportions for election results.
+
+```{r}
+cat_summary_party <- tibble(`Majority Party in 2020` = 
+                              c("Republican",
+                                "Democrat"),
+                            `Sample proportion` = 
+                              c(pct_repub$estimate * 100,
+                                pct_dem$estimate *100),
+                            `95-percent confidence - low` = 
+                              c(pct_repub$conf.int[1] * 100,
+                                pct_dem$conf.int[1] * 100),
+                            `95-percent confidence - high` = 
+                              c(pct_repub$conf.int[2] * 100,
+                                pct_dem$conf.int[2] * 100))
+
+kable(cat_summary_party, digits = 0)
+```
+
+And here are the proportions of counties in each type.
+
+```{r}
+cat_summary_type <- tibble(`County type` = 
+                              c("Larch central metro",
+                                "Large fringe metro",
+                                "Medium metro",
+                                "Small metro",
+                                "Micropolitan",
+                                "Non-core"),
+                            `Sample proportion` = 
+                              c(pct_large_metro$estimate * 100,
+                                pct_fringe_metro$estimate * 100,
+                                pct_med_metro$estimate * 100,
+                                pct_small_metro$estimate * 100,
+                                pct_micro$estimate * 100,
+                                pct_rural$estimate * 100),
+                            `95-percent confidence - low` = 
+                              c(pct_large_metro$conf.int[1] * 100,
+                                pct_fringe_metro$conf.int[1] * 100,
+                                pct_med_metro$conf.int[1] * 100,
+                                pct_small_metro$conf.int[1] * 100,
+                                pct_micro$conf.int[1] * 100,
+                                pct_rural$conf.int[1] * 100),
+                            `95-percent confidence - high` = 
+                              c(pct_large_metro$conf.int[2] * 100,
+                                pct_fringe_metro$conf.int[2] * 100,
+                                pct_med_metro$conf.int[2] * 100,
+                                pct_small_metro$conf.int[2] * 100,
+                                pct_micro$conf.int[2] * 100,
+                                pct_rural$conf.int[2] * 100))
+
+kable(cat_summary_type, digits = 0)
+```
+
+#### Bar charts
+
+It could also be helpful to visualize these results as a bar chart with error bars to indicate the confidence intervals. Here is a bar chart for the majority vote in the past presidential election.
+
+```{r}
+ggplot(cat_summary_party) +
+  geom_bar(aes(x = `Majority Party in 2020`, 
+               y = `Sample proportion`),
+           stat = "identity") +
+  geom_errorbar(aes(x = `Majority Party in 2020`, 
+               y = `Sample proportion`,
+               ymin = `95-percent confidence - low`,
+               ymax = `95-percent confidence - high`),
+           stat = "identity") +
+  scale_y_continuous(name = "Percent of counties",
+                     breaks = c(0, 20, 40, 60, 80),
+                     labels = c("0", "20%", "40%", "60%", "80%")) +
+  theme_bw()
+```
+
+And here is one for the county type.
+
+```{r}
+ggplot(cat_summary_type) +
+  geom_bar(aes(x = `County type`, 
+               y = `Sample proportion`),
+           stat = "identity") +
+  geom_errorbar(aes(x = `County type`, 
+               y = `Sample proportion`,
+               ymin = `95-percent confidence - low`,
+               ymax = `95-percent confidence - high`),
+           stat = "identity") +
+  scale_y_continuous(name = "Percent of counties",
+                     breaks = c(0, 10, 20, 30, 40),
+                     labels = c("0", "10%", "20%", "30%", "40%")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+# Bivariate analysis
+
+My dependent variable is the number of COVID cases per capita. My independent variables are median age, population density, county type, and majority vote in the most recent presidential election.
+
+## Correlations / regression on continuous variables
+
+### Correlations
+
+#### Age
+
+You can use `cor.test()` to calculate the correlations between a pair of continuous variables. Here is the correlation between the COVID rate and median age.
+
+```{r}
+cor.test(~ covid_rate + med_age_E, data = data)
+```
+
+The 95-percent confidence interval for the correlation does not include zero - all values in the interval are negative. This means we can say with 95-percent confidence that higher median ages are associated with lower COVID rates.
+
+We can get the same result from a regression.
+
+```{r}
+age_model <- lm(covid_rate ~ med_age_E, data = data)
+
+summary(age_model)
+```
+
+The p-value for the age coefficient is the same as the p-value for the correlation. The R-squared value is the square of the correlation you calculated above.
+
+#### Density
+
+Here is the correlation between the COVID rate and population density.
+
+```{r}
+cor.test(~ covid_rate + pop_dens, data = data)
+```
+
+The 95-percent confidence interval for the correlation does not include zero - all values in the interval are negative. This means we can say with 95-percent confidence that higher densities are associated with lower COVID rates. Again, we can get the same result using regression.
+
+```{r}
+dens_model <- lm(covid_rate ~ pop_dens, data = data)
+
+summary(dens_model)
+```
+
+## Difference in means / regression on categorical variables
+
+### Party
+
+I want to know if Republican-leaning counties have higher COVID rates than Democratic-leaning counties, on average. I can answer this question with a two-sample t-test.
+
+```{r}
+t.test(covid_rate ~ majority_vote, data)
+```
+
+The p-value is less than 0.05, which means the relationship is significant. This is also clear from the fact that the entire 95-percent confidence interval is negative (it does not include zero). 
+
+I can get the same result from regression.
+
+```{r}
+party_model <- lm(covid_rate ~ majority_vote, data = data)
+
+summary(party_model)
+```
+
+I can also use regression to find the effect of county type on COVID rates. The most common type of county is non-core, but the greatest share of the population lives in Large central metro counties, so I'll compare everything to that.
+
+```{r}
+data <- data %>%
+  mutate(type = as.factor(type)) %>%
+  mutate(type = relevel(type, "Large central metro"))
+
+type_model <- lm(covid_rate ~ type, data)
+
+summary(type_model)
+```
+
+Micropolitan counties, non-core counties, and small metro counties all have higher COVID rates than Large central metros do. The rates in Large fringe metros and medium metros are not significantly different than those in large central metros.
+
+# References
+
+Dong E, Du H, Gardner L. An interactive web-based dashboard to track COVID-19 in real time. Lancet Inf Dis. 20(5):533-534. doi: 10.1016/S1473-3099(20)30120-1
+
+Hamidi, Shima, Sadegh Sabouri, and Reid Ewing. "Does density aggravate the COVID-19 pandemic? Early findings and lessons for planners." Journal of the American Planning Association 86, no. 4 (2020): 495-509.
+
+MIT Election Data and Science Lab, 2018, "County Presidential Election Returns 2000-2020", https://doi.org/10.7910/DVN/VOQCHQ, Harvard Dataverse, V9, UNF:6:qSwUYo7FKxI6vd/3Xev2Ng== [fileUNF]
+
+National Center for Health Statistics. "NCHS Urban-Rural Classification Scheme for Counties" 2013. https://www.cdc.gov/nchs/data_access/urban_rural.htm
+
+United States Census Bureau. American Community Survey, 5-year estimates. 2019.
+
+United States Census Bureau. Redistricting Data. 2020.
+
+Walker, Kyle, and Matt Herman (2021). tidycensus: Load US Census Boundary and Attribute Data as 'tidyverse' and 'sf'-Ready Data Frames. R package version 1.1. https://CRAN.R-project.org/package=tidycensus
+
+Wong, David WS, and Yun Li. "Spreading of COVID-19: Density matters." Plos one 15, no. 12 (2020): e0242398.
+
