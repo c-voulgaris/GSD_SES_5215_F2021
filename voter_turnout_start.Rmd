@@ -1,0 +1,118 @@
+---
+title: "Assignment 1 Example"
+author: "Carole Voulgaris"
+date: "10/16/2021"
+output: 
+  html_document:
+    theme: readable
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+I'm demonstrating how to use IPUMS or MIT elections data to calculate county-level voter turnout.
+
+This demonstration uses the following libraries.
+
+```{r, message=FALSE}
+library(tidyverse)
+library(tidycensus)
+library(readxl)
+library(knitr)
+library(ipumsr)
+library(survey)
+library(srvyr)
+```
+
+## Load ACS data
+
+Once you have the voter turnout, you'll want to join it with other data you'll get from the ACS - probably using the`tidycensus` package. When you're getting those variable, be sure and get the number of voting-age citizens too.
+
+```{r, message=FALSE, results='hide'}
+variables = c(voting_age_pop = "B29001_001",
+              homes = "B25003_001",
+              rented_homes = "B25003_003",
+              median_income = "B06011_001")
+
+acs_vars <- get_acs(geography = "county", 
+                   variables = variables, 
+                   output = "wide")
+```
+
+## Calculating turnout from MIT data
+
+I've downloaded a csv file with election results from the Harvard Dataverse (https://doi.org/10.7910/DVN/VOQCHQ) and saved it to the data file in my project folder. I'll load it here.
+
+``````{r, message=FALSE, results='hide'}
+election <- read_csv('data/countypres_2000-2020.csv') %>%
+  filter(year == 2020) %>%
+  rename(GEOID = county_fips) %>%
+  group_by(GEOID) %>%
+  dplyr::summarize(totalvotes = first(totalvotes))
+```
+
+Join the two dataset and calculate percent turnout. You actually have 12 counties with more votes than voting-age citizens (this is *not* indicative of fraud - there's error associated with the population estimates, and they're a year earlier than the election anyway), so we'll just call that 100% turnout.
+
+``````{r, message=FALSE}
+data <- inner_join(acs_vars, election) %>%
+  mutate(pct_voted = totalvotes / voting_age_popE) %>%
+  mutate(pct_rental = rented_homesE / homesE) %>%
+  select(GEOID, NAME, pct_voted, pct_rental, median_incomeE) %>%
+  mutate(pct_voted = ifelse(pct_voted > 1, 1, pct_voted))
+
+write_csv(data, file = "acs_mit_turnout.csv")
+```
+# IPUMS voter turnout
+
+You can also try and get voter turnout from the CPS voter supplement - which is easiest to get through IPUMS. You'll need to get a data extract with the variable indicating whether an individual voted in the last election. And you'll need to fiddle with the GEOID to get it to match the one in the ACS data.
+
+```{r, message=FALSE, results='hide'}
+ddi <- read_ipums_ddi("data/cps_00002.xml")
+ipums_data <- read_ipums_micro(ddi) %>%
+  mutate(VOTED = as_factor(VOTED)) %>%
+  mutate(GEOID = as.character(COUNTY)) %>%
+  mutate(GEOID = ifelse(str_length(GEOID) == 4, 
+                        paste("0", GEOID, sep=""),
+                        GEOID)) 
+```
+
+Then you'll need to set up the survey weights
+
+```{r}
+svy_ipums <- ipums_data %>%
+  as_survey_design(weights = WTFINL)
+```
+
+Then you can collapse the data down to the county level.
+
+```{r}
+county_turnout <- svy_ipums %>%
+  group_by(GEOID) %>%
+  srvyr::summarise(pct_voted_ipums = survey_mean(VOTED == "Voted"))
+```
+
+You end up with just 281 counties. And you can join that to the ACS data. (which drops two more counties - so you end up with 279)
+
+```{r}
+data_ipums <- inner_join(data, county_turnout)
+
+write_csv(data_ipums, file = "ipums_turnout.csv")
+
+```
+
+Interesting to compare the turnout from the two methods:
+
+```{r}
+data_ipums <- data_ipums %>%
+  mutate(difference = pct_voted - pct_voted_ipums)
+
+mean(data_ipums$difference, na.rm = TRUE)
+
+hist(data_ipums$difference)
+```

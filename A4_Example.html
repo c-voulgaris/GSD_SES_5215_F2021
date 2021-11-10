@@ -1056,7 +1056,7 @@ summary(type_model)</code></pre>
 </div>
 <div id="multivariate-regression" class="section level1">
 <h1>Multivariate regression</h1>
-<p>So, I’ve determined that counties with a higher median age have higher COVID rates, and so do counties where the majority of votes were for the Republican candidate in 2020. But how much of the effect I’m seeing for political party is really just because people in those counties are older? To really get to the separate effects each of these variables might have on COVID rates, I need to estimate all these relationships at once. This is easy to do with the lm() function. On the right side of the regression formula, I just need to list all my independent variables, separated by a + sign.</p>
+<p>So, I’ve determined that counties with a higher median age have higher COVID rates, and so do counties where the majority of votes were for the Republican candidate in 2020. But how much of the effect I’m seeing for political party is really just because people in those counties are older? To really get to the separate effects each of these variables might have on COVID rates, I need to estimate all these relationships at once. This is easy to do with the <code>lm()</code> function. On the right side of the regression formula, I just need to list all my independent variables, separated by a + sign.</p>
 <pre class="r"><code>full_model &lt;- lm(covid_rate ~ med_age_E + pop_dens + majority_vote + type, my_data)
 
 summary(full_model)</code></pre>
@@ -1091,7 +1091,7 @@ summary(full_model)</code></pre>
 <p>On the other hand, our bivariate regression with population density found that each additional person per square mile is associated with 0.000001225 additional COVID cases per capita. Once we’ve controlled for our other variables, we find that relationship is weaker. An additional person per square mile is only associated with an additional 0.0000004484 COVID cases per capita (6 zeros after the decimal rather than 5). This relationship is still significant at a 90% confidence level, but not at a 95% confidence level.</p>
 <p>The majority vote in the 2020 presidential election was a significant predictor of COVID rates in our bivariate analysis, which showed that Republican counties had COVID rates that were about 0.011655 cases per person higher than in Democratic counties. When we control for everything else, this effect is about the same (but slightly larger): Republican counties have COVID rates that are about 0.01337 cases per capita higher than Democratic counties.</p>
 <p>Population density probably explains a lot of the same thing that county type does, which is probably why few of the county types have significant coefficients once we’re controlling for population density. The only type that’s different from Large central metro counties at a 95-percent confidence level are non-core (rural) counties.</p>
-<p>Overall our model explains about 20 percent of the variation in county-level COVID rates.</p>
+<p>Overall, our model explains about 20 percent of the variation in county-level COVID rates.</p>
 </div>
 <div id="references" class="section level1">
 <h1>References</h1>

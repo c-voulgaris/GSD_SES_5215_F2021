@@ -327,7 +327,7 @@ And here are the proportions of counties in each type.
 
 ```{r}
 cat_summary_type <- tibble(`County type` = 
-                              c("Larch central metro",
+                              c("Large central metro",
                                 "Large fringe metro",
                                 "Medium metro",
                                 "Small metro",

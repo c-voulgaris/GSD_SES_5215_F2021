@@ -1,0 +1,85 @@
+---
+title: "Data Assembly"
+output: 
+  html_document:
+    theme: readable
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidycensus)
+```
+
+
+# Introduction
+
+The purpose of this exercise is to determine the relationship between the umemployment rate in a region and each of four other variables:
+
+* Dominant industry
+* Metropolitan or micropolitan area
+* Mean usual hours worked
+* Median household income
+
+The following code assembles the dataset (to run the code, you'll need to have a census API key installed on your computer).
+
+```{r, message=FALSE}
+variables <- c(num_unemp_16up_ = "B23025_005",
+               num_workers_16up_ = "B23025_002",
+               mean_work_hours_ = "B23020_001",
+               median_income_ = 	"B06011_001",
+               tot_wrkrs_ind_ = "B08126_001",
+               wrkrs_ag_ = "B08126_002",
+               wrkrs_const_ = "B08126_003",
+               wrkrs_manuf_ = "B08126_004",
+               wrkrs_whlsl_ = "B08126_005",
+               wrkrs_retail_ = "B08126_006",
+               wrkrs_transpo_ = "B08126_007",
+               wrkrs_info_ = "B08126_008",
+               wrkrs_FIRE_ = "B08126_009",
+               wrkrs_prof_ = "B08126_010",
+               wrkrs_edu_ = "B08126_011",
+               wrkrs_rec_ = "B08126_012",
+               wrkrs_srvc_ = "B08126_013",
+               wrkrs_PA_ = "B08126_014",
+               wrkrs_mil_ = "B08126_015")
+
+cbsa_data <- get_acs(geography = "cbsa",
+                     variables = variables,
+                     output = "wide") 
+
+cbsa_data <- cbsa_data %>%
+  mutate(main_ind_x = max.col(cbsa_data[,13:40])) %>%
+  mutate(main_ind = case_when(main_ind_x == 1 ~ "Agriculture",
+                              main_ind_x == 5 ~ "Manufacturing",
+                              main_ind_x == 9 ~ "Retail sales",
+                              main_ind_x == 17 ~ "Professional services",
+                              main_ind_x == 19 ~ "Educational services",
+                              main_ind_x == 21 ~ "Hospitality",
+                              main_ind_x == 25 ~ "Public administration",
+                              main_ind_x == 27 ~ "Military")) %>%
+  mutate(metro = ifelse(str_detect(NAME, "Metro"), "Metropolitan", "Micropolitan")) %>%
+  mutate(unemp_rate = num_unemp_16up_E / num_workers_16up_E) %>%
+  rename(mean_work_hours = mean_work_hours_E) %>%
+  rename(median_income = median_income_E) %>%
+  select(GEOID, NAME, unemp_rate, median_income, mean_work_hours, metro, main_ind)
+```
+
+# Bivariate analysis
+
+Calculate the magnitude and the significance of the relationship. Include a few sentences to describe each relationship.
+
+## Relationship between unemployment rate and dominant industry
+
+## Relationship between unemployment rate and metropolitan area status
+
+## Relationship between unemployment rate and median income
+
+## Relationship between unemployment rate and mean unsual hours worked
