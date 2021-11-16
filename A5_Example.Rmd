@@ -600,11 +600,13 @@ A linear transformation is when you add/subtract and/or multiply/divide a consta
 
 The intercept value in your regression coefficients table is the value you would predict if all of your independent variables were zero. It's usually meaningless because it would be unreasonable for all your independent variables to be zero. In this example, the intercept tells me that a Democratic Large Central Metro with a population density of zero and a median age of zero would have a COVID rate of 0.14 cases per capital. If that county existed, the COVID rate would be the least of my questions about it. But what if I subtracted the average population density from all my densities and the average median age from all my median ages? 
 
-A younger-than-average county would have a negative value and an older-than-average county would have a positive value. Likewise, a sparser-than-average county would have a negative value and a denser than average county would have a positive value. My regression coefficents for those two variables wouldn't change, but the intercept would. Instead of describing a place with a median age of zero and a population density of zero, if would refer to a place that was average in terms of median age and density. That's more interesting. 
+A younger-than-average county would have a negative value and an older-than-average county would have a positive value. Likewise, a sparser-than-average county would have a negative value and a denser than average county would have a positive value. My regression coefficents for those two variables wouldn't change, but the intercept would. Instead of describing a place with a median age of zero and a population density of zero, it would refer to a place that was average in terms of median age and density. That's more interesting. 
 
 I'll use `export_summs()` to display the results of the two models (the initial one I estimated and the one with mean centering).
 
 ```{r}
+mean
+
 centered_data <- my_data %>%
   mutate(pop_dens = pop_dens - mean(pop_dens, na.rm=TRUE),
          med_age_E = med_age_E - mean(med_age_E, na.rm=TRUE))
