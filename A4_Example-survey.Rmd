@@ -49,6 +49,8 @@ For this analysis, I'm using microdata from the 2019 5-year sample of the Americ
 4. TRANWORK: Mode of transportation to work
 5. SEX: Sex
 
+IPUMS data codes missing values as `9999999`, so I'll recode those as NA. I'll also filter my data to exclude individuals who typically work zero hours per week. `as_factor()` and `lbl_collapse()` are helpful functions in the `ipumsr` package that will replace numeric codes with more legible labels. Once I've done that, I end up with two mode categories that I don't want to include in my analysis: "N/A" and "Worked at home", so I'll filter those out. Finally, drop the categories I'm no longer using and relevel the mode variable so the default value is "Auto, truck, or van" - this will come in handy when I include that variable in a regression.
+
 ```{r, message=FALSE, results='hide'}
 ddi <- read_ipums_ddi("data/usa_00005.xml")
 data <- read_ipums_micro(ddi) %>%
@@ -56,14 +58,18 @@ data <- read_ipums_micro(ddi) %>%
   filter(UHRSWORK > 0) %>%
   mutate(SEX = as_factor(SEX)) %>%
   mutate(TRANWORK = lbl_collapse(TRANWORK, ~.val %/% 10)) %>%
-  mutate(TRANWORK = as_factor(TRANWORK))
+  mutate(TRANWORK = as_factor(TRANWORK)) %>%
+  filter(TRANWORK != "N/A",
+         TRANWORK != "Worked at home") %>%
+  mutate(TRANWORK = droplevels(TRANWORK)) %>%
+  mutate(TRANWORK = relevel(TRANWORK, "Auto, truck, or van"))
 ```
  
-This dataset includes 348,564 individual survey respondents. 
+This dataset includes 294,636 individual survey respondents. 
 
 The dataset includes weights to adjust for the ways in which the sample is not representative of the overall population, so I'll use the survey (Lumley, 2004) and srvyr (Freedman Ellis and Schneider 2021) packages to incorporate those weights into my analysis. First, I need to create a survey design object.
 
-```{r}
+```{r, warning=FALSE}
 svy_data <- data %>%
   as_survey_design(ids = CLUSTER,
                    strata = STRATA,
@@ -171,8 +177,6 @@ My dependent variable is travel time to work. My independent variables are sex, 
 
 ## Correlations
 
-### Correlations
-
 You can use `svycor()` to calculate the correlations between all pairs of continuous variables. The first argument of the function is a list of continuous variables, in the format `~variable1 + variable2 + ... + variableN`. You can include as many variables as you want. Then you need to indicate the survey design object you created that speficies all the weights and everything. `sig.stats = TRUE` means you want p-values and standard errors for each of the correlation values as well.
 
 `svycor()` may take a few minutes to run.
@@ -245,13 +249,75 @@ corrs_pretty_int <- left_join(corrs_low_df, corrs_upp_df) %>%
 kable(corrs_pretty_int)
 ```
 
+## Difference in means
 
+### Sex
+
+I want to know if women have longer commutes than men, on average. I can answer this question with a two-sample t-test.
+
+```{r}
+svyttest(TRANTIME ~ SEX, svy_data)
+```
+
+This result tells me that the difference in travel time by sex is about 2.1 minutes (the negative value indicates that women have shorter commutes than men, but that isn't really that obvious from the output above - you'd need to know that the sex variable codes women as TRUE and men as FALSE). The confidence interval does not include zero and the p-value is less than 0.05, so this difference is significant at a 95-percent confidence level.
+
+### Commute mode
+
+I also want to know about the relationship between commute mode and commute time. First, I'll compare the commute time for those who commute by car to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Auto, truck, or van"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by car have commutes that are about six minutes shorter than those who commute by other modes. I can be 95 percent confident that the difference is between 5.7 minutes and 6.7 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level. 
+
+Now I'll compare the commute time for those who commute by transit to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Bus"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by transit have commutes that are about 21 minutes longer than those who commute by other modes. I can be 95 percent confident that the difference is between 20.7 minutes and 22 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level. 
+
+Now I'll compare the commute time for those who commute by walking to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Walked only"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by walking have commutes that are about 18 minutes shorter than those who commute by other modes. I can be 95 percent confident that the difference is between 18.6 minutes and 17.9 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level. 
+
+Now I'll compare the commute time for those who commute by bike to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Bicycle"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by bike have commutes that are about 8 minutes shorter than those who commute by other modes. I can be 95 percent confident that the difference is between 9.4 minutes and 7.5 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level.
+
+Now I'll compare the commute time for those who commute by motorcycle to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Motorcycle"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by bike have commutes that are about 6 minutes shorter than those who commute by other modes. I can be 95 percent confident that the difference is between 7.2 minutes and 4.5 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level.
+
+Finally, I'll compare the commute time for those who commute by some other mode to those who commute by any of the modes above (car, bike, walking, transit, or motorcycle),
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Other"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by some other mode have commutes that are about 3 minutes longer than those who commute by car, motorcycle, transit, walking, or cycling. I can be 95 percent confident that the difference is between 0.8 minutes and 4.2 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level.
 
 ## Bivariate regression
 
+### Continuous variables
+
 We can also test each of the above relationships using regression. Let's start with the relationship between travel time to work and income.
 
-The p-value for the INCTOT variable will be the same as the p-value for the correlation between income and travel time. The correlation would be the same as the square root of the R-square value, but `svyglm()` doesn't return an R-square value - with the weights.
+The p-value for the INCTOT variable will be the same as the p-value for the correlation between income and travel time. The regression coefficient tells us the increase in commute time we would expect for each $1 increase in income.
 
 ```{r}
 income_model <- svyglm(TRANTIME ~ INCTOT, design = svy_data)
@@ -271,39 +337,27 @@ summary(hours_model)
 
 This means that each additional hour in a typical work week is associated with 0.23 minutes of additional commute time. So you'd expect someone who works 44 hours per week to be commuting for about a minute longer than someone who works 40 hours per week.
 
-## Difference in means / regression on categorical variables
+### Categorical variables
 
 ### Sex
 
-I want to know if women have longer commutes than men, on average. I can answer this question with a two-sample t-test.
+I can get the same results I got from the two-sample t-test using regression.
 
 ```{r}
-svyttest(TRANTIME ~ SEX, svy_data)
-```
-
-And I can get the same result using a regression.
-
-```{r}
-sex_model <- svyglm(TRANTIME ~ SEX, svy_data)
+sex_model <- svyglm(TRANTIME ~ SEX, design = svy_data)
 
 summary(sex_model)
 ```
 
-Both results indicate that women have commutes that are, on average, 2.7 minutes shorter than men's commutes.
+The result indicates that women have commutes that are, on average, 2.1 minutes shorter than men's commutes. That's the same as the result from the t-test we did previously.
 
 ### Commute mode
 
-I also want to know about the relationship between commute mode and commute time. Since cars are the most common commute mode, I'm probably most interested in how the commute time by every other commute mode differs from that of driving. To make driving the base case (the default condition that we compare everything else to), I need to relevel my factors and recreate the survey object.
+I also want to know about the relationship between commute mode and commute time. Since cars are the most common commute mode, I'm probably most interested in how the commute time by every other commute mode differs from that of driving. To make driving the base case (the default condition that we compare everything else to), I would need to make sure I've releveled the variable to indicate that before I create my survey object (remember - I said that would come in handy for the regression).
+
+This is a little different from what I was doing with the t-test. Instead of comparing each category to everything that isn't in that category, I'm comparing each category to cars.
 
 ```{r}
-data <- data %>%
-  mutate(TRANWORK = relevel(TRANWORK, "Auto, truck, or van"))
-
-svy_data <- data %>%
-  as_survey_design(ids = CLUSTER,
-                   strata = STRATA,
-                   weights = PERWT)
-
 mode_model <- svyglm(TRANTIME ~ TRANWORK, svy_data)
 
 summary(mode_model)
