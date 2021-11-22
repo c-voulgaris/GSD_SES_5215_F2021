@@ -44,6 +44,7 @@ library(tigris)
 library(sf)
 library(gridExtra)
 library(jtools)
+library(interactions)
 ```
 
 First, I'll load the total population and total number of housing units from the decennial census, using the `tidycensus` package (Walker 2021).
@@ -605,8 +606,6 @@ A younger-than-average county would have a negative value and an older-than-aver
 I'll use `export_summs()` to display the results of the two models (the initial one I estimated and the one with mean centering).
 
 ```{r}
-mean
-
 centered_data <- my_data %>%
   mutate(pop_dens = pop_dens - mean(pop_dens, na.rm=TRUE),
          med_age_E = med_age_E - mean(med_age_E, na.rm=TRUE))
@@ -690,14 +689,14 @@ You can't log-transform a negative value, so you'll need to add the means back i
 
 ```{r, warning=FALSE}
 centered_data_scaled_log <- centered_data_scaled %>%
-  mutate(log2_pop_dens = log(pop_dens + mean(my_data$pop_dens, na.rm = TRUE), base = 2))
+  mutate(pop_dens = pop_dens + mean(my_data$pop_dens, na.rm=TRUE))
 
 coeff_names_scaled <- c("Constant" = "(Intercept)",
                  "Median age (years)" = "med_age_E",
                  "Median age (decades)" = "med_age_10",
                  "Population density (people per square mile)" = "pop_dens",
                  "Population density (100 people per square mile)" = "pop_dens_100",
-                 "Doubling population density" = "log2_pop_dens",
+                 "Doubling population density" = "log(pop_dens, base = 2)",
                  "Republican majority in 2020" = "majority_voteRepublican",
                  "Large fringe metro" = "typeLarge fringe metro",
                  "Medium metro" = "typeMedium metro",
@@ -706,7 +705,7 @@ coeff_names_scaled <- c("Constant" = "(Intercept)",
                  "Rural" = "typeNon-core")
                    
                    
-centered_model_scaled_log <- lm(covid_rate ~ med_age_10 + log2_pop_dens + majority_vote + type, centered_data_scaled_log)
+centered_model_scaled_log <- lm(covid_rate ~ med_age_10 + log(pop_dens, base = 2) + majority_vote + type, centered_data_scaled_log)
 
 export_summs(full_model, centered_model, centered_model_scaled, centered_model_scaled_log,
              error_format = "(p = {p.value})",
@@ -719,6 +718,45 @@ export_summs(full_model, centered_model, centered_model_scaled, centered_model_s
 ```
 
 We see that density wasn't signifcant in our other models, but the log-transformed version is, and the model fit (as indicated by the R-square value) improved slightly.
+
+# Interactions
+
+Based on the results of my preferred model above, I see that higher population densities are associated with lower COVID rates. Controlling for population density, large fringe metros and medium metros have lower COVID rates than large central metros. Does the relationship between density and COVID rates change depending on what type of county I'm in? I can answer that question by interacting county type with density in my model.
+
+```{r}
+coeff_names_interaction <- c("Constant" = "(Intercept)",
+                 "Median age (years)" = "med_age_E",
+                 "Median age (decades)" = "med_age_10",
+                 "Population density (people per square mile)" = "pop_dens",
+                 "Population density (100 people per square mile)" = "pop_dens_100",
+                 "Doubling population density" = "log(pop_dens, base = 2)",
+                 "Republican majority in 2020" = "majority_voteRepublican",
+                 "Large fringe metro" = "typeLarge fringe metro",
+                 "Medium metro" = "typeMedium metro",
+                 "Small metro" = "typeSmall metro",
+                 "Micropolitan" = "typeMicropolitan",
+                 "Rural" = "typeNon-core")
+                   
+                   
+interaction_model <- lm(covid_rate ~ med_age_10 + log(pop_dens, base = 2) + majority_vote + type + med_age_10*majority_vote, centered_data_scaled_log)
+
+export_summs(centered_model_scaled_log, interaction_model,
+             error_format = "(p = {p.value})",
+             error_pos = "same",
+             model.names = c("Model 1",
+                             "Model 2"))
+```
+
+My model fit improved slightly, and the interaction between the political leaning of a county and the median age is significant and negative. The coefficient for age is also negative. This means the relationship between age and COVID rates is even stronger for Republican counties than for Democratic counties. A graph might help us see what this means.
+
+```{r, message=FALSE, results='hide'}
+interact_plot(interaction_model, pred = med_age_10, modx = majority_vote,
+              interval = TRUE) +
+  scale_x_continuous(breaks = breaks <- c(-2, -1, 0, 1, 2),
+                     labels = round(breaks * 10 + mean(my_data$med_age_E, na.rm = TRUE)),
+                     name = "Median age") +
+  scale_y_continuous(name = "Predicted COVID cases per 1,000 residents")
+```
 
 # References
 

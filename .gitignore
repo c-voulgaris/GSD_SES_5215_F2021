@@ -40,3 +40,6 @@ vignettes/*.pdf
 
 # larger datasets
 data/
+
+# Exam datasets
+exam_datasets/
