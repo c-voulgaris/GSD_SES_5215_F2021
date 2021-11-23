@@ -1,0 +1,580 @@
+---
+title: "Assignment 1 Example: Survey Data"
+author: "Carole Voulgaris"
+date: "10/16/2021"
+output: 
+  html_document:
+    theme: readable
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction and setup
+
+The purpose of this example is to demonstrate some of the methods that will be helpful to you in loading survey data (especially data from IPUMS), calculating descriptive statistics, estimating bivariate relationships, and estimating a multivariate regression model.
+
+I'll be using the following packages. These are the same ones from Assignment 2, with one addition (`jtools`).
+
+```{r, message=FALSE}
+library(tidyverse)
+library(knitr)
+library(ipumsr)
+library(survey)
+library(srvyr)
+library(jtools)
+library(weights)
+library(R.devices)
+library(interactions)
+```
+
+# Research question
+
+How does the amount of time a person spends traveling to work relate to their income, sex, mode of transportation, and hours worked per week?
+
+# Prior research
+
+Crane (2007) finds that there is a widening gap in commute times between men and women. Sandow and Westin (2010) find that men experience a higher income premium for long-distance commuting than women do.
+
+# Data 
+
+For this analysis, I'm using microdata from the 2019 5-year sample of the American Community Survey for the Los Angeles Metropolitan Area, as downloaded from IPUMS USA (Ruggles et al. 2021). I'm going to analyze the following five variables:
+
+1. INCTOT: Annual personal income.
+2. TRANTIME: Typical commute time to work
+3. UHRSWORK: Typical hours worked per week
+4. TRANWORK: Mode of transportation to work
+5. SEX: Sex
+
+IPUMS data codes missing values as `9999999`, so I'll recode those as NA. I'll also filter my data to exclude individuals who typically work zero hours per week. `as_factor()` and `lbl_collapse()` are helpful functions in the `ipumsr` package that will replace numeric codes with more legible labels. Once I've done that, I end up with two mode categories that I don't want to include in my analysis: "N/A" and "Worked at home", so I'll filter those out. Finally, drop the categories I'm no longer using and relevel the mode variable so the default value is "Auto, truck, or van" - this will come in handy when I include that variable in a regression.
+
+```{r, message=FALSE, results='hide'}
+ddi <- read_ipums_ddi("data/usa_00005.xml")
+data <- read_ipums_micro(ddi) %>%
+  na_if(9999999) %>%
+  filter(UHRSWORK > 0) %>%
+  mutate(SEX = as_factor(SEX)) %>%
+  mutate(TRANWORK = lbl_collapse(TRANWORK, ~.val %/% 10)) %>%
+  mutate(TRANWORK = as_factor(TRANWORK)) %>%
+  filter(TRANWORK != "N/A",
+         TRANWORK != "Worked at home") %>%
+  mutate(TRANWORK = droplevels(TRANWORK)) %>%
+  mutate(TRANWORK = relevel(TRANWORK, "Auto, truck, or van"))
+```
+ 
+This dataset includes 294,636 individual survey respondents. 
+
+The dataset includes weights to adjust for the ways in which the sample is not representative of the overall population, so I'll use the survey (Lumley, 2004) and srvyr (Freedman Ellis and Schneider 2021) packages to incorporate those weights into my analysis. First, I need to create a survey design object.
+
+```{r, warning=FALSE}
+svy_data <- data %>%
+  as_survey_design(ids = CLUSTER,
+                   strata = STRATA,
+                   weights = PERWT)
+```
+
+# Descriptive statistics
+
+## Continuous variables
+
+Here's how I can create a table with the estimated mean and 95-percent confidence interval and variance (the square of the standard deviation) for each of my three continuous variables.
+
+```{r}
+travel_time_mean <- svy_data %>%
+  srvyr::summarize(mean = survey_mean(TRANTIME, vartype = c("ci", "var"), na.rm = TRUE))
+
+income_mean <- svy_data %>%
+  srvyr::summarize(mean = survey_mean(INCTOT, vartype = c("ci", "var"), na.rm = TRUE))
+
+hours_mean <- svy_data %>%
+  srvyr::summarize(mean = survey_mean(UHRSWORK, vartype = c("ci", "var"), na.rm = TRUE))
+```
+
+I can do something similar to create a table with the 25th, 50th, and 75th percentile values.
+
+```{r}
+travel_time_quants <- svy_data %>%
+  srvyr::summarize(quants = survey_quantile(TRANTIME, 
+                                     quantiles =  c(0.25, 0.5, 0.75),
+                                     vartype = NULL)) 
+
+income_quants <- svy_data %>%
+  srvyr::summarize(quants = survey_quantile(INCTOT, 
+                                     quantiles =  c(0.25, 0.5, 0.75),
+                                     vartype = NULL)) 
+
+hours_quants <- svy_data %>%
+  srvyr::summarize(quants = survey_quantile(UHRSWORK, 
+                                     quantiles =  c(0.25, 0.5, 0.75),
+                                     vartype = NULL)) 
+```
+
+I can combine those six tables into a single table using `rbind()` and `left_join()`, and I add the standard deviations and the interquartile ranges to that combined table.
+
+```{r, message=FALSE}
+mean_summary <- rbind(travel_time_mean, income_mean, hours_mean) %>%
+    mutate(variable = c("Travel time to work",
+                      "Personal income",
+                      "Usual hours worked per week"))
+
+quant_summary <- rbind(travel_time_quants, income_quants, hours_quants) %>%
+    mutate(variable = c("Travel time to work",
+                      "Personal income",
+                      "Usual hours worked per week"))
+
+summary <- left_join(mean_summary, quant_summary) %>%
+  mutate(sd = mean_var^0.5) %>%
+  mutate(IQR = quants_q75 - quants_q25) %>%
+  rename(median = quants_q50) %>%
+  select(variable, mean, mean_low, mean_upp, median, sd, IQR)
+
+kable(summary, digits=2)
+```
+
+I can set up a histogram using `svyhist()`, then bring the resulting data into ggplot to display it (I'm calling `svyhist()` from within `suppressGraphics()` to avoid displaying the unformatted version of the histogram).
+
+```{r}
+travel_time_hist <- suppressGraphics(svyhist(~TRANTIME, design = svy_data,
+                            freq = TRUE))
+
+travel_time_hist_df <- tibble(mids = travel_time_hist$mids,
+                              counts = travel_time_hist$counts)
+
+ggplot(travel_time_hist_df) +
+  geom_bar(aes(x = mids, y = counts),
+           stat = "identity") +
+  theme_bw() +
+  scale_x_continuous(name = "Travel time to work (minutes)") +
+  scale_y_continuous(name = "Estimated number of workers (weighted)")
+```
+
+## Categorical variables
+
+I can use `group_by()` and `survey_prop()` to calculate shares of my categorical variables, along with confidence intervals.
+
+```{r}
+ed_shares <- svy_data %>%
+  group_by(SEX) %>%
+  srvyr::summarize(share = survey_prop(vartype = "ci"))
+
+kable(ed_shares, digits = 3)
+```
+
+```{r}
+mode_shares <- svy_data %>%
+  group_by(TRANWORK) %>%
+  srvyr::summarize(share = survey_prop(vartype = "ci"))
+
+kable(mode_shares, digits = 3)
+```
+
+# Bivariate analysis
+
+My dependent variable is travel time to work. My independent variables are sex, mode of transportation, hours worked per week, and income.
+
+## Correlations
+
+You can use `svycor()` to calculate the correlations between all pairs of continuous variables. The first argument of the function is a list of continuous variables, in the format `~variable1 + variable2 + ... + variableN`. You can include as many variables as you want. Then you need to indicate the survey design object you created that speficies all the weights and everything. `sig.stats = TRUE` means you want p-values and standard errors for each of the correlation values as well.
+
+`svycor()` may take a few minutes to run.
+
+```{r}
+corrs <- svycor(~TRANTIME + UHRSWORK + INCTOT, design = svy_data, sig.stats = TRUE)
+```
+
+This creates a matrix of values with the correlations between all possible pairs of variables in your list.
+
+```{r}
+corrs$cors
+```
+
+You can also get a matrix of p-values,
+
+```{r}
+corrs$p.values
+```
+
+and a matrix of standard errors,
+
+```{r}
+corrs$std.err
+```
+
+which you can use to calculate a 95-percent confidence interval.
+
+```{r}
+corrs_ci_low <- corrs$cors - 1.96*corrs$std.err
+
+corrs_ci_upp <- corrs$cors + 1.96*corrs$std.err
+```
+
+You can view those upper and lower limits in separate little matrices:
+
+```{r}
+corrs_ci_low
+
+corrs_ci_upp
+```
+
+Or you can do a little finangling to create a table that shows them as intervals
+
+```{r, message=FALSE}
+corrs_low_df <- as_tibble(corrs_ci_low) %>%
+  mutate(variable = c("Travel time to work", "Usual hours worked", "Income")) %>%
+  rename(TRANTIME_low = TRANTIME,
+         UHRSWORK_low = UHRSWORK,
+         INCTOT_low = INCTOT)
+
+corrs_upp_df <- as_tibble(corrs_ci_upp) %>%
+  mutate(variable = c("Travel time to work", "Usual hours worked", "Income")) %>%
+  rename(TRANTIME_upp = TRANTIME,
+         UHRSWORK_upp = UHRSWORK,
+         INCTOT_upp = INCTOT)
+
+corrs_pretty_int <- left_join(corrs_low_df, corrs_upp_df) %>%
+  mutate(`Travel time to work` = paste(prettyNum(TRANTIME_low, digits = 3), 
+                                 " to ", 
+                                 prettyNum(TRANTIME_upp, digits = 3))) %>%
+  mutate(`Usual hours worked` = paste(prettyNum(UHRSWORK_low, digits = 3), 
+                                 " to ", 
+                                 prettyNum(UHRSWORK_upp, digits = 3))) %>%
+  mutate(Income = paste(prettyNum(INCTOT_low, digits = 3), 
+                                 " to ", 
+                                 prettyNum(INCTOT_upp, digits = 3))) %>%
+  select(variable, `Travel time to work`, `Usual hours worked`, Income)
+  
+kable(corrs_pretty_int)
+```
+
+## Difference in means
+
+### Sex
+
+I want to know if women have longer commutes than men, on average. I can answer this question with a two-sample t-test.
+
+```{r}
+svyttest(TRANTIME ~ SEX, svy_data)
+```
+
+This result tells me that the difference in travel time by sex is about 2.1 minutes (the negative value indicates that women have shorter commutes than men, but that isn't really that obvious from the output above - you'd need to know that the sex variable codes women as TRUE and men as FALSE). The confidence interval does not include zero and the p-value is less than 0.05, so this difference is significant at a 95-percent confidence level.
+
+### Commute mode
+
+I also want to know about the relationship between commute mode and commute time. First, I'll compare the commute time for those who commute by car to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Auto, truck, or van"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by car have commutes that are about six minutes shorter than those who commute by other modes. I can be 95 percent confident that the difference is between 5.7 minutes and 6.7 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level. 
+
+Now I'll compare the commute time for those who commute by transit to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Bus"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by transit have commutes that are about 21 minutes longer than those who commute by other modes. I can be 95 percent confident that the difference is between 20.7 minutes and 22 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level. 
+
+Now I'll compare the commute time for those who commute by walking to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Walked only"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by walking have commutes that are about 18 minutes shorter than those who commute by other modes. I can be 95 percent confident that the difference is between 18.6 minutes and 17.9 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level. 
+
+Now I'll compare the commute time for those who commute by bike to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Bicycle"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by bike have commutes that are about 8 minutes shorter than those who commute by other modes. I can be 95 percent confident that the difference is between 9.4 minutes and 7.5 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level.
+
+Now I'll compare the commute time for those who commute by motorcycle to those who commute by all other modes.
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Motorcycle"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by bike have commutes that are about 6 minutes shorter than those who commute by other modes. I can be 95 percent confident that the difference is between 7.2 minutes and 4.5 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level.
+
+Finally, I'll compare the commute time for those who commute by some other mode to those who commute by any of the modes above (car, bike, walking, transit, or motorcycle),
+
+```{r}
+svyttest(TRANTIME ~ (TRANWORK== "Other"), svy_data, na.rm = TRUE)
+```
+
+On average, those who commute by some other mode have commutes that are about 3 minutes longer than those who commute by car, motorcycle, transit, walking, or cycling. I can be 95 percent confident that the difference is between 0.8 minutes and 4.2 minutes. Since that interval does not include zero, this difference is significant at a 95-percent confidence level.
+
+## Bivariate regression
+
+### Continuous variables
+
+We can also test each of the above relationships using regression. Let's start with the relationship between travel time to work and income.
+
+The p-value for the INCTOT variable will be the same as the p-value for the correlation between income and travel time. The regression coefficient tells us the increase in commute time we would expect for each $1 increase in income.
+
+```{r}
+income_model <- svyglm(TRANTIME ~ INCTOT, design = svy_data)
+
+summary(income_model)
+```
+
+This result indicates that, on average, each dollar of additional income is associated with an increase in commute time of $\ 1.606 \times 10^{-5}$ minutes. That's a very small amount, but since this is a linear relationship we're talking about, it means each $10,000 of additional income is associated with an increase in commute time of 0.1606 minutes (about 10 seconds). Which is a little more interesting, I guess.
+
+We can do the same for hours worked.
+
+```{r}
+hours_model <- svyglm(TRANTIME ~ UHRSWORK, design = svy_data)
+
+summary(hours_model)
+```
+
+This means that each additional hour in a typical work week is associated with 0.23 minutes of additional commute time. So you'd expect someone who works 44 hours per week to be commuting for about a minute longer than someone who works 40 hours per week.
+
+### Categorical variables
+
+### Sex
+
+I can get the same results I got from the two-sample t-test using regression.
+
+```{r}
+sex_model <- svyglm(TRANTIME ~ SEX, design = svy_data)
+
+summary(sex_model)
+```
+
+The result indicates that women have commutes that are, on average, 2.1 minutes shorter than men's commutes. That's the same as the result from the t-test we did previously.
+
+### Commute mode
+
+I also want to know about the relationship between commute mode and commute time. Since cars are the most common commute mode, I'm probably most interested in how the commute time by every other commute mode differs from that of driving. To make driving the base case (the default condition that we compare everything else to), I would need to make sure I've releveled the variable to indicate that before I create my survey object (remember - I said that would come in handy for the regression).
+
+This is a little different from what I was doing with the t-test. Instead of comparing each category to everything that isn't in that category, I'm comparing each category to cars.
+
+```{r}
+mode_model <- svyglm(TRANTIME ~ TRANWORK, svy_data)
+
+summary(mode_model)
+```
+
+This suggests that commutes by motorcycle are, on average, about 5 minutes shorter than commutes by car, transit commutes are 21 minutes longer, and bike commutes are about 17 minutes shorter.
+
+# Multivariate regression
+
+So, I've determined people who work longer hours have longer commutes and that women have shorter commutes. How do I know that the sex differences I'm seeing aren't just because women don't work as many hours as men? To really get to the separate effects each of these variables might have on commute times rates, I need to estimate all these relationships at once. This is easy to do with the `svyglm()` function. On the right side of the regression formula, I just need to list all my independent variables, separated by a + sign.
+
+```{r}
+full_model <- svyglm(TRANTIME ~ INCTOT + UHRSWORK + SEX + TRANWORK, svy_data)
+
+summary(full_model)
+```
+
+All of my variable coefficients are still significant, even after controlling for the each of the other variables.
+
+# Transformations
+
+Transforming a variable means to apply some kind of mathematical equation to it to get a new value. You can apply a linear transformation or a non-linear transformation.
+
+## Linear transformations
+
+A linear transformation is when you add/subtract and/or multiply/divide a constant value to one of your variables. A linear transformation will not change how will your model fits the data, but it might make your regression results easier to interpret. 
+
+### Mean centering
+
+The intercept value in your regression coefficients table is the value you would predict if all of your independent variables were zero. It's usually meaningless because it would be unreasonable for all your independent variables to be zero. In this example, the intercept tells me that a man who drives to work and works zero hours per week and has zero income would have a commute time of 26 minutes. This is a nonsense scenario. But what if I subtracted the average income from all my incomes and the average work hours from all my work hours? 
+
+A person who works fewer-than-average hours per week would have a negative value for work hours and a person who works more-than-average hours per week whould have a positive value. Likewise, a person with a below-average income would have a negative value and a higher-than-average income would have a positive value for the mean-centered income. My regression coefficients for those two variables wouldn't change, but the intercept would. Instead of describing a person with zero income who works zero hours per week, it would refer to a person with average income and work hours. That's more interesting. 
+
+I'll use `export_summs()` to display the results of the two models (the initial one I estimated and the one with mean centering).
+
+```{r}
+centered_data <- data %>%
+  mutate(INCTOT = INCTOT - income_mean$mean,
+         UHRSWORK = UHRSWORK - hours_mean$mean)
+
+svy_centered <- centered_data %>%
+  as_survey_design(ids = CLUSTER,
+                   strata = STRATA,
+                   weights = PERWT)
+
+centered_model <- svyglm(TRANTIME ~ INCTOT + UHRSWORK + SEX + TRANWORK, svy_centered)
+
+export_summs(full_model, centered_model, 
+             error_format = "(p = {p.value})",
+             error_pos = "same",
+             model.names = c("Initial", "Centered"))
+```
+
+The model fit (given by the R-square value) is exactly the same, and the coefficients are all the same, except for the intercept. While the initial model indicates that a a male car-commuter who usually works zero hours and has zero income would have a commute time of 26 minutes, the centered model indicates that a male car-commuter who is average in terms of both income and work hours has a commute time of 31 minutes.
+
+The `export_summs()` function is pretty cool. It also lets you customize how the variable names will appear on the table, and the order they appear in.
+
+```{r}
+coeff_names <- c("Constant" = "(Intercept)",
+                 "Income" = "INCTOT",
+                 "Usual hours worked per week" = "UHRSWORK",
+                 "Female (relative to male)" = "SEXFemale",
+                 "Transit (relative to car)" = "TRANWORKBus",
+                 "Walk (relative to car)" = "TRANWORKWalked only",
+                 "Bike (relative to car)" = "TRANWORKBicycle",
+                 "Motorcycle (relative to car)" = "TRANWORKMotorcycle",
+                 "Other mode (relative to car)" = "TRANWORKOther")
+
+export_summs(full_model, centered_model, 
+             error_format = "(p = {p.value})",
+             error_pos = "same",
+             model.names = c("Model 1", "Model 2"),
+             coefs = coeff_names)
+```
+
+### Scaling
+
+Some of our coefficents are very small because they refer to very small changes. For example, the coefficient for income is the additional commute time that you would expect if a person's income increased by one dollar per year. Of course that's small. We can rescale some of our variables to make the coefficients more interpretable. This *will* change our model coefficients, but in a very predictable way.
+
+Instead of predicting the effect of a one-dollar increase income, I'll predict the effect of a $10,000 increase in income. 
+
+```{r}
+centered_data_scaled <- centered_data %>%
+  mutate(INCTOT_10k = INCTOT / 10000)
+
+svy_centered_scaled <- centered_data_scaled %>%
+  as_survey_design(ids = CLUSTER,
+                   strata = STRATA,
+                   weights = PERWT)
+
+coeff_names_scaled <- c("Constant" = "(Intercept)",
+                 "Income" = "INCTOT",
+                 "Income ($10,000s)" = "INCTOT_10k",
+                 "Usual hours worked per week" = "UHRSWORK",
+                 "Female (relative to male)" = "SEXFemale",
+                 "Transit (relative to car)" = "TRANWORKBus",
+                 "Walk (relative to car)" = "TRANWORKWalked only",
+                 "Bike (relative to car)" = "TRANWORKBicycle",
+                 "Motorcycle (relative to car)" = "TRANWORKMotorcycle",
+                 "Other mode (relative to car)" = "TRANWORKOther")
+                   
+centered_model_scaled <- svyglm(TRANTIME ~ INCTOT_10k + UHRSWORK + SEX + TRANWORK, svy_centered_scaled)
+
+export_summs(full_model, centered_model, centered_model_scaled, 
+             error_format = "(p = {p.value})",
+             error_pos = "same",
+             model.names = c("Model 1", "Model 2", "Model 3"),
+             coefs = coeff_names_scaled)
+```
+
+Now I see that a $10,000 increase in a person's income is associated with a difference in commute time of about 0.07 minutes (about 4 seconds). Notice that the R-square value is the same for all three models.
+
+## Non-linear transformations
+
+Non-linear transformations can improve model fit if you think the relationship you're interested in isn't linear. A common non-linear relationship is a logarithmic relationship. Population and income often have logarithmic relationships with the things they affect. In a logarithmic relationship, the percent increase in something is a better predictor of change than the actual value of the increase. Let's try log-transforming population density.
+
+If we use a base of 2 for the log, the interpretation of that coefficient will be the effect of doubling income (since the base-two logarithm of a value increases by one when it doubles).
+
+You can't log-transform a negative value, so you'll need to add the means back in (in reality - if you knew you were going to log-transform a variable, you wouldn't means-center it first).
+
+```{r, warning=FALSE}
+centered_data_scaled_log <- centered_data_scaled %>%
+  mutate(INCTOT = INCTOT + income_mean$mean)
+
+svy_centered_scaled_log <- centered_data_scaled_log %>%
+  as_survey_design(ids = CLUSTER,
+                   strata = STRATA,
+                   weights = PERWT)
+                   
+centered_model_scaled_log <- svyglm(TRANTIME ~ log(INCTOT, base = 2) + UHRSWORK + SEX + TRANWORK, svy_centered_scaled_log)
+
+coeff_names_scaled_log <- c("Constant" = "(Intercept)",
+                 "Income" = "INCTOT",
+                 "Income ($10,000s)" = "INCTOT_10k",
+                 "Doubling income" = "log(INCTOT, base = 2)",
+                 "Usual hours worked per week" = "UHRSWORK",
+                 "Female (relative to male)" = "SEXFemale",
+                 "Transit (relative to car)" = "TRANWORKBus",
+                 "Walk (relative to car)" = "TRANWORKWalked only",
+                 "Bike (relative to car)" = "TRANWORKBicycle",
+                 "Motorcycle (relative to car)" = "TRANWORKMotorcycle",
+                 "Other mode (relative to car)" = "TRANWORKOther")
+
+export_summs(full_model, centered_model, centered_model_scaled, centered_model_scaled_log, 
+             error_format = "(p = {p.value})",
+             error_pos = "same",
+             model.names = c("Model 1", "Model 2", "Model 3", "Model 4"),
+             coefs = coeff_names_scaled_log)
+```
+
+This latest model tells us that a doubling income is associated with about a one-minute increase in commute time. The model fit (as indicated by the R-square value) is about the same. The type of relationship each model describes is quite different.
+
+Here is the relationship estimated by Model 3:
+
+```{r}
+effect_plot(centered_model_scaled, pred = INCTOT_10k, interval = TRUE) +
+  scale_y_continuous(name = "Commute time to work (minutes)") +
+  scale_x_continuous(name = "Income",
+                     breaks = breaks <- seq(0, 100, by = 20),
+                     labels = paste("$", formatC(breaks*10000, big.mark = ",", format = "d"), sep=""))
+  
+  
+```
+
+And here is the relationship estimated by Model 4:
+
+```{r}
+effect_plot(centered_model_scaled_log, pred = INCTOT, interval = TRUE) +
+  scale_y_continuous(name = "Commute time to work (minutes)") +
+  scale_x_continuous(name = "Income",
+                     breaks = breaks <- seq(0, 1000000, by = 200000),
+                     labels = paste("$", formatC(breaks, big.mark = ",", format = "d"), sep="")) 
+  
+```
+
+The model fit doesn't change much, but the relationship implied by Model 4 seems more reasonable, so that will be our preferred model.
+
+# Interactions
+
+We know from our preferred model that longer work hours are associated with longer commutes and that women have shorter commutes than men. But is the relationship between commute time and work hours different for women than it is for men?
+
+We can find out by estimating a new model with an interaction between income and sex.
+
+```{r, warning=FALSE}
+interaction_model <- svyglm(TRANTIME ~ log(INCTOT, base = 2) + UHRSWORK + SEX + TRANWORK + SEX:UHRSWORK, svy_centered_scaled_log)
+
+export_summs(centered_model_scaled_log, interaction_model, 
+             error_format = "(p = {p.value})",
+             error_pos = "same",
+             model.names = c("Model 4", "Model 5"))
+```
+
+The coefficient for the interaction term is significant and positive. It's in the same direction as the coefficient for income, which means the effect of hours worked on commute time is even stronger for women than it is for men.
+
+A visualization may be helpful here.
+
+```{r}
+x_ticks <- seq(0, 100, by = 10)
+
+interact_plot(interaction_model, pred = UHRSWORK, modx = SEX, interval = TRUE) +
+  scale_x_continuous(name = "Usual hours worked per week",
+                     breaks = x_ticks - hours_mean$mean,
+                     labels = x_ticks) +
+  scale_y_continuous(name = "Commute time to work (minutes)",
+                     breaks = seq(26, 36, by = 1))
+```
+
+
+# References
+
+Crane, Randall. "Is there a quiet revolution in women's travel? Revisiting the gender gap in commuting." Journal of the American planning association 73, no. 3 (2007): 298-316.
+
+Freedman Ellis, Greg, and Ben Schneider (2021). srvyr: 'dplyr'-Like Syntax for Summary Statistics of Survey Data. R package version 1.0.1. https://CRAN.R-project.org/package=srvyr
+
+Lumley, T. (2004) Analysis of complex survey samples. Journal of Statistical Software 9(1): 1-19
+
+Ruggles, Steven, Sarah Flood, Sophia Foster, Ronald Goeken, Jose Pacas, Megan Schouweiler and Matthew Sobek. IPUMS USA: Version 11.0 [dataset]. Minneapolis, MN: IPUMS (2021) https://doi.org/10.18128/D010.V11.0
+
+Sandow, Erika, and Kerstin Westin. "The persevering commuter–Duration of long-distance commuting." Transportation Research Part A: Policy and Practice 44, no. 6 (2010): 433-445.
